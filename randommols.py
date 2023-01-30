@@ -1,12 +1,25 @@
 #!/usr/bin/env python
 
 import os
+import sys
+import shutil
 import subprocess
 from numpy.random import RandomState
 
+# get number of compounds from command line
+numarg = len(sys.argv)
+if numarg < 2:
+    print("No number of compounds specified. Using default value of 2.\n")
+    numcomp = 2
+elif numarg > 2:
+    print("Too many arguments. Error stop.")
+    exit(1)
+else:
+    numcomp = int(sys.argv[1])
+
 ### GENERAL PARAMETERS ###
-numcomp = 25
-maxcid = 10000
+maxcid = 1000000
+maxnumat = 50
 
 class bcolors:
     HEADER = '\033[95m'
@@ -39,11 +52,12 @@ pwd = os.getcwd()
 
 # run PubGrep for each value and set up a list with successful downloads
 comp = []
+molname = []
 for i in values:
-    print("\nDownloading CID %6d ..." % i)
+    print("\nDownloading CID %7d ..." % i)
     try:
         pgout = subprocess.run(
-            ["PubGrep", "--input", "cid", str(i)],
+            ["PubGrep_dev", "--input", "cid", str(i),"--fast"],
             check=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -60,20 +74,20 @@ for i in values:
         print("Return code:", pgout.returncode)
 
     if pgout.stderr.decode("utf-8") == "":
-        print(' '*3 + "Downloaded   %6d successfully." % i)
+        print(' '*3 + "Downloaded   %7d successfully." % i)
     else:
         if "abnormal termination" in pgout.stderr.decode("utf-8"):
-            print(' '*3 + f"{bcolors.WARNING}xTB error in conversion process - skipping CID %6d {bcolors.ENDC}" % i)
+            print(' '*3 + f"{bcolors.WARNING}xTB error in conversion process - skipping CID %7d {bcolors.ENDC}" % i)
             continue
         elif not "normal termination" in pgout.stderr.decode("utf-8"):
-            print(' '*3 + f"{bcolors.WARNING}Unknown PubGrep/xTB conversion error - skipping CID %6d{bcolors.ENDC}" % i)
+            print(' '*3 + f"{bcolors.WARNING}Unknown PubGrep/xTB conversion error - skipping CID %7d{bcolors.ENDC}" % i)
             errmess="PubGrep_error" + str(i) + ".err"
             with open(errmess, "w") as f:
                 f.write(pgout.stderr.decode("utf-8"))
             continue
         else:
-            print(' '*3 + "Downloaded   %6d successfully after xTB conversion." % i)
-
+            print(' '*3 + "Downloaded   %7d successfully after xTB conversion." % i)
+    
     try:
         os.chdir(str(pwd) + "/pubchem_compounds/" + str(i))
         # print("Current working directory: {0}".format(os.getcwd()))
@@ -100,15 +114,15 @@ for i in values:
         # write the error output to a file
         with open("mctc-convert_error.err", "w") as f:
             f.write(pgout.stderr.decode("utf-8"))
-        print(f"{bcolors.WARNING}xTB optimization failed - skipping CID %6d{bcolors.ENDC}" % i)
+        print(f"{bcolors.WARNING}xTB optimization failed - skipping CID %7d{bcolors.ENDC}" % i)
         odir(pwd)
         continue
 
     # check if first line of struc.xyz is not larger than 50
     with open("struc.xyz", "r") as f:
         first_line = f.readline()
-        if int(first_line.split()[0]) > 50:
-            print(f"{bcolors.WARNING}Number of atoms in struc.xyz is larger than 50 - skipping CID %6d{bcolors.ENDC}" % i)
+        if int(first_line.split()[0]) > maxnumat:
+            print(f"{bcolors.WARNING}Number of atoms in struc.xyz is larger than 50 - skipping CID %7d{bcolors.ENDC}" % i)
             odir(pwd)
             continue
 
@@ -118,6 +132,8 @@ for i in values:
                            stdout=subprocess.PIPE,
                            stderr=subprocess.PIPE,
                            timeout=120)
+        with open("xtb.out", "w") as f:
+            f.write(pgout.stdout.decode("utf-8"))
     except subprocess.TimeoutExpired as exc:
         print(' '*3 + f"Process timed out.\n{exc}")
         odir(pwd)
@@ -126,21 +142,38 @@ for i in values:
         print(' '*3 + f"{bcolors.FAIL}Status : FAIL{bcolors.ENDC}", exc.returncode)
         with open("xtb_error.err", "w") as f:
             f.write(exc.output.decode("utf-8"))
-        print(f"{bcolors.WARNING}xTB optimization failed - skipping CID %6d{bcolors.ENDC}" % i)
+        print(f"{bcolors.WARNING}xTB optimization failed - skipping CID %7d{bcolors.ENDC}" % i)
         odir(pwd)
         continue
-    # print return code
-    if pgout.returncode != 0:
-        print("Return code:", pgout.returncode)
+
+    try:
+        shutil.copy("xtbopt.xyz", "struc.xyz")
+    except FileNotFoundError:
+        print(' '*3 + f"{bcolors.WARNING}xtbopt.xyz not found - skipping CID %7d{bcolors.ENDC}" % i)
+        odir(pwd)
+        continue
 
     odir(pwd)
 
-    print(f"{bcolors.OKGREEN}Structure of    %6d successfully generated and optimized.{bcolors.ENDC}" % i)
+    # grep the name of the molecule from found.results (first entry in first line)
+    with open("found.results", "r") as f:
+        first_line = f.readline()
+        molname.append(first_line.split()[0])
+        print(' '*3 + "Compound name: %s" % molname[-1])
+
+
+    print(f"{bcolors.OKGREEN}Structure of    %7d successfully generated and optimized.{bcolors.ENDC}" % i)
     comp.append(i)
     print("[" + str(len(comp)) + "/" + str(numcomp) + "]")
     if len(comp) >= numcomp:
         break
 
 # print number of successful downloads
-print("\n\nNumber of successful downloads: ", len(comp))
+print("\nNumber of successful downloads: ", len(comp))
 print("Compounds: ", comp)
+
+# write the list of successful downloads to a file
+with open("compounds.txt", "w") as f:
+    for i in comp:
+        f.write(str(i) + " " + molname[comp.index(i)] + "\n")
+os.remove("found.results")
