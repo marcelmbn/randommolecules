@@ -2,7 +2,6 @@
 
 import os
 import sys
-import shutil
 import subprocess
 from numpy.random import RandomState
 
@@ -18,8 +17,9 @@ else:
     numcomp = int(sys.argv[1])
 
 ### GENERAL PARAMETERS ###
-maxcid = 1000000
+maxcid = 10000000
 maxnumat = 50
+
 
 class bcolors:
     HEADER = '\033[95m'
@@ -32,6 +32,7 @@ class bcolors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
+
 # define a function which goes back to the original working directory if it is called
 def odir(pwdorg):
     try:
@@ -42,10 +43,11 @@ def odir(pwdorg):
     except NotADirectoryError:
         print("{0} is not a directory" % pwdorg)
 
+
 # set the seed
 print("Generating random numbers between 1 and %d ..." % maxcid)
 seed = RandomState(2009)
-values = seed.randint(1, maxcid, size=3*numcomp)
+values = seed.randint(1, maxcid, size=3 * numcomp)
 print("Done.")
 
 pwd = os.getcwd()
@@ -57,7 +59,8 @@ for i in values:
     print("\nDownloading CID %7d ..." % i)
     try:
         pgout = subprocess.run(
-            ["PubGrep_dev", "--input", "cid", str(i),"--fast"],
+            ["PubGrep_dev", "--input", "cid",
+             str(i), "--fast"],
             check=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -74,20 +77,27 @@ for i in values:
         print("Return code:", pgout.returncode)
 
     if pgout.stderr.decode("utf-8") == "":
-        print(' '*3 + "Downloaded   %7d successfully." % i)
+        print(' ' * 3 + "Downloaded   %7d successfully." % i)
     else:
         if "abnormal termination" in pgout.stderr.decode("utf-8"):
-            print(' '*3 + f"{bcolors.WARNING}xTB error in conversion process - skipping CID %7d {bcolors.ENDC}" % i)
+            print(
+                ' ' * 3 +
+                f"{bcolors.WARNING}xTB error in conversion process - skipping CID %7d {bcolors.ENDC}"
+                % i)
             continue
         elif not "normal termination" in pgout.stderr.decode("utf-8"):
-            print(' '*3 + f"{bcolors.WARNING}Unknown PubGrep/xTB conversion error - skipping CID %7d{bcolors.ENDC}" % i)
-            errmess="PubGrep_error" + str(i) + ".err"
+            print(
+                ' ' * 3 +
+                f"{bcolors.WARNING}Unknown PubGrep/xTB conversion error - skipping CID %7d{bcolors.ENDC}"
+                % i)
+            errmess = "PubGrep_error" + str(i) + ".err"
             with open(errmess, "w") as f:
                 f.write(pgout.stderr.decode("utf-8"))
             continue
         else:
-            print(' '*3 + "Downloaded   %7d successfully after xTB conversion." % i)
-    
+            print(' ' * 3 +
+                  "Downloaded   %7d successfully after xTB conversion." % i)
+
     try:
         os.chdir(str(pwd) + "/pubchem_compounds/" + str(i))
         # print("Current working directory: {0}".format(os.getcwd()))
@@ -96,60 +106,77 @@ for i in values:
     except NotADirectoryError:
         print("/pubchem_compounds/{0} is not a directory".format(i))
     except PermissionError:
-        print("You do not have permissions to change to /pubchem_compounds/{0}".format(i))
+        print(
+            "You do not have permissions to change to /pubchem_compounds/{0}".
+            format(i))
 
-
-    try:
-        pgout = subprocess.run(["mctc-convert", "{0}.sdf".format(i), "struc.xyz"],
-                           check=True,
-                           stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE,
-                           timeout=120)
-    except subprocess.TimeoutExpired as exc:
-        print(' '*3 + f"Process timed out.\n{exc}")
-        odir(pwd)
-        continue
-    except subprocess.CalledProcessError as exc:
-        print(' '*3 + "Status : FAIL", exc.returncode, exc.output)
-        # write the error output to a file
-        with open("mctc-convert_error.err", "w") as f:
-            f.write(pgout.stderr.decode("utf-8"))
-        print(f"{bcolors.WARNING}xTB optimization failed - skipping CID %7d{bcolors.ENDC}" % i)
-        odir(pwd)
-        continue
-
-    # check if first line of struc.xyz is not larger than 50
-    with open("struc.xyz", "r") as f:
-        first_line = f.readline()
-        if int(first_line.split()[0]) > maxnumat:
-            print(f"{bcolors.WARNING}Number of atoms in struc.xyz is larger than 50 - skipping CID %7d{bcolors.ENDC}" % i)
+    # print the first entry of the fourth line compund of interest in sdf format
+    with open("{0}.sdf".format(i), "r") as f:
+        lines = f.readlines()
+        nat = int(lines[3].split()[0])
+        print(' ' * 3 + "# of atoms: {0:8d}".format(nat))
+        if int(nat) > maxnumat:
+            print(
+                f"{bcolors.WARNING}Number of atoms in {i}.sdf is larger than {maxnumat} - skipping CID {i:7d}{bcolors.ENDC}"
+            )
             odir(pwd)
             continue
 
     try:
-        pgout = subprocess.run(["xtb", "struc.xyz", "--opt"],
-                           check=True,
-                           stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE,
-                           timeout=120)
+        pgout = subprocess.run(["xtb", "{0}.sdf".format(i), "--opt"],
+                               check=True,
+                               stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE,
+                               timeout=120)
         with open("xtb.out", "w") as f:
             f.write(pgout.stdout.decode("utf-8"))
     except subprocess.TimeoutExpired as exc:
-        print(' '*3 + f"Process timed out.\n{exc}")
+        print(' ' * 3 + f"Process timed out.\n{exc}")
         odir(pwd)
         continue
     except subprocess.CalledProcessError as exc:
-        print(' '*3 + f"{bcolors.FAIL}Status : FAIL{bcolors.ENDC}", exc.returncode)
-        with open("xtb_error.err", "w") as f:
+        print(' ' * 3 + f"{bcolors.FAIL}Status : FAIL{bcolors.ENDC}",
+              exc.returncode)
+        with open("xtb_error.out", "w") as f:
             f.write(exc.output.decode("utf-8"))
-        print(f"{bcolors.WARNING}xTB optimization failed - skipping CID %7d{bcolors.ENDC}" % i)
+        with open("xtb_error.err", "w") as f:
+            f.write(pgout.stderr.decode("utf-8"))
+        print(
+            f"{bcolors.WARNING}xTB optimization failed - skipping CID %7d{bcolors.ENDC}"
+            % i)
         odir(pwd)
         continue
 
+    # load fourth entry of a line with ":: total charge" of xtb.out into a variable
+    chrg=0
+    with open("xtb.out", "r") as f:
+        lines = f.readlines()
+        for line in lines:
+            if ":: total charge" in line:
+                chrg = round(float(line.split()[3]))
+    print(' ' * 3 + "Total charge: {0:6d}".format(chrg))
+    # write chrg to a file called .CHRG
+    with open(".CHRG", "w") as f:
+        f.write(str(chrg)+"\n")
+
     try:
-        shutil.copy("xtbopt.xyz", "struc.xyz")
-    except FileNotFoundError:
-        print(' '*3 + f"{bcolors.WARNING}xtbopt.xyz not found - skipping CID %7d{bcolors.ENDC}" % i)
+        pgout = subprocess.run(["mctc-convert", "xtbopt.sdf", "struc.xyz"],
+                               check=True,
+                               stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE,
+                               timeout=120)
+    except subprocess.TimeoutExpired as exc:
+        print(' ' * 3 + f"Process timed out.\n{exc}")
+        odir(pwd)
+        continue
+    except subprocess.CalledProcessError as exc:
+        print(' ' * 3 + "Status : FAIL", exc.returncode, exc.output)
+        # write the error output to a file
+        with open("mctc-convert_error.err", "w") as f:
+            f.write(pgout.stderr.decode("utf-8"))
+        print(
+            f"{bcolors.WARNING}mctc-convert failed - skipping CID %7d{bcolors.ENDC}"
+            % i)
         odir(pwd)
         continue
 
@@ -159,10 +186,11 @@ for i in values:
     with open("found.results", "r") as f:
         first_line = f.readline()
         molname.append(first_line.split()[0])
-        print(' '*3 + "Compound name: %s" % molname[-1])
+        print(' ' * 3 + "Compound name: %s" % molname[-1])
 
-
-    print(f"{bcolors.OKGREEN}Structure of    %7d successfully generated and optimized.{bcolors.ENDC}" % i)
+    print(
+        f"{bcolors.OKGREEN}Structure of    %7d successfully generated and optimized.{bcolors.ENDC}"
+        % i)
     comp.append(i)
     print("[" + str(len(comp)) + "/" + str(numcomp) + "]")
     if len(comp) >= numcomp:
