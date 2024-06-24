@@ -3,7 +3,7 @@
 import os
 import sys
 import subprocess
-from numpy.random import RandomState
+import numpy as np
 
 # get number of compounds from command line
 numarg = len(sys.argv)
@@ -17,8 +17,8 @@ else:
     numcomp = int(sys.argv[1])
 
 ### GENERAL PARAMETERS ###
-maxcid = 10000000
-maxnumat = 50
+MAXCID = 10000000
+MAXNUMAT = 50
 
 
 class bcolors:
@@ -39,15 +39,15 @@ def odir(pwdorg):
         os.chdir(str(pwdorg))
         # print("Current working directory: {0}".format(os.getcwd()))
     except FileNotFoundError:
-        print("Directory does not exist".format(i))
+        print(f"Directory {pwdorg} does not exist")
     except NotADirectoryError:
-        print("{0} is not a directory" % pwdorg)
+        print(f"{pwdorg} is not a directory")
 
 
 # set the seed
-print("Generating random numbers between 1 and %d ..." % maxcid)
-seed = RandomState(2009)
-values = seed.randint(1, maxcid, size=3 * numcomp)
+print(f"Generating random numbers between 1 and {MAXCID} ...")
+seed = np.random.default_rng()
+values = seed.integers(1, MAXCID, size=3 * numcomp)
 print("Done.")
 
 pwd = os.getcwd()
@@ -56,7 +56,7 @@ pwd = os.getcwd()
 comp = []
 molname = []
 for i in values:
-    print("\nDownloading CID %7d ..." % i)
+    print(f"\nDownloading CID {i} ...")
     try:
         pgout = subprocess.run(
             ["PubGrep_dev", "--input", "cid",
@@ -85,7 +85,7 @@ for i in values:
                 f"{bcolors.WARNING}xTB error in conversion process - skipping CID %7d {bcolors.ENDC}"
                 % i)
             continue
-        elif not "normal termination" in pgout.stderr.decode("utf-8"):
+        elif "normal termination" not in pgout.stderr.decode("utf-8"):
             print(
                 ' ' * 3 +
                 f"{bcolors.WARNING}Unknown PubGrep/xTB conversion error - skipping CID %7d{bcolors.ENDC}"
@@ -115,9 +115,9 @@ for i in values:
         lines = f.readlines()
         nat = int(lines[3].split()[0])
         print(' ' * 3 + "# of atoms: {0:8d}".format(nat))
-        if int(nat) > maxnumat:
+        if int(nat) > MAXNUMAT:
             print(
-                f"{bcolors.WARNING}Number of atoms in {i}.sdf is larger than {maxnumat} - skipping CID {i:7d}{bcolors.ENDC}"
+                f"{bcolors.WARNING}Number of atoms in {i}.sdf is larger than {MAXNUMAT} - skipping CID {i:7d}{bcolors.ENDC}"
             )
             odir(pwd)
             continue
